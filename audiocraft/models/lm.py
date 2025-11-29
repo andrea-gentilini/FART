@@ -241,6 +241,7 @@ class LMModel(StreamingModule):
         """
         B, K, S = sequence.shape
         assert K == self.num_codebooks, "Sequence shape must match the specified number of codebooks"
+        # FART: here, everything can remain the same, except that we will have K=1 and a much bigger embedding matrix
         input_ = sum([self.emb[k](sequence[:, k]) for k in range(K)])
         if condition_tensors is None:
             assert not self._is_streaming, "Conditions tensors should be precomputed when streaming."
@@ -259,6 +260,7 @@ class LMModel(StreamingModule):
                                src_mask=(self.attn_mask_per_stage[stage] if stage >= 0 else None))  # type: ignore
         if self.out_norm:
             out = self.out_norm(out)
+        # FART: also here everything can remain the same. self.linears will be a list with only ONE classification head.
         logits = torch.stack([self.linears[k](out) for k in range(K)], dim=1)  # [B, K, S, card]
 
         # remove the prefix from the model outputs
@@ -302,6 +304,7 @@ class LMModel(StreamingModule):
         codes = codes.contiguous()
         # map codes [B, K, T] into pattern sequence [B, K, S] using special_token_id for masked tokens
         pattern = self.pattern_provider.get_pattern(T)
+        # FART: this is the line in which the pattern is applied
         sequence_codes, sequence_indexes, sequence_mask = pattern.build_pattern_sequence(
             codes, self.special_token_id, keep_only_valid_steps=keep_only_valid_steps,
         )

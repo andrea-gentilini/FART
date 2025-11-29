@@ -28,6 +28,12 @@ from ..utils.cache import CachedBatchWriter, CachedBatchLoader
 from ..utils.samples.manager import SampleManager
 from ..utils.utils import get_dataset_from_loader, is_jsonable, warn_once, model_hash
 
+########################################################################
+# FART: import sentencepiece
+import sentencepiece as spm
+########################################################################
+
+
 
 class MusicGenSolver(base.StandardSolver):
     """Solver for MusicGen training task.
@@ -38,6 +44,13 @@ class MusicGenSolver(base.StandardSolver):
 
     def __init__(self, cfg: omegaconf.DictConfig):
         super().__init__(cfg)
+
+        ########################################################################
+        # FART: maybe here we could add a parmeter which would be our tokenizer like this
+        sp_model_path = "/home/andleo/Tesi/fart/output_train/analisi_unigram_fino_500k/run_01/music.model"
+        self.custom_tokenizer = spm.SentencePieceProcessor(model_file=sp_model_path)
+        ########################################################################
+
         # easier access to sampling parameters
         self.generation_params = {
             'use_sampling': self.cfg.generate.lm.use_sampling,
@@ -147,17 +160,18 @@ class MusicGenSolver(base.StandardSolver):
             f"Compression model sample rate is {self.compression_model.sample_rate} but "
             f"Solver sample rate is {self.cfg.sample_rate}."
             )
+        # FART: we don't need this
         # ensure we have matching configuration between LM and compression model
-        assert self.cfg.transformer_lm.card == self.compression_model.cardinality, (
-            "Cardinalities of the LM and compression model don't match: ",
-            f"LM cardinality is {self.cfg.transformer_lm.card} vs ",
-            f"compression model cardinality is {self.compression_model.cardinality}"
-        )
-        assert self.cfg.transformer_lm.n_q == self.compression_model.num_codebooks, (
-            "Numbers of codebooks of the LM and compression models don't match: ",
-            f"LM number of codebooks is {self.cfg.transformer_lm.n_q} vs ",
-            f"compression model numer of codebooks is {self.compression_model.num_codebooks}"
-        )
+        # assert self.cfg.transformer_lm.card == self.compression_model.cardinality, (
+        #     "Cardinalities of the LM and compression model don't match: ",
+        #     f"LM cardinality is {self.cfg.transformer_lm.card} vs ",
+        #     f"compression model cardinality is {self.compression_model.cardinality}"
+        # )
+        # assert self.cfg.transformer_lm.n_q == self.compression_model.num_codebooks, (
+        #     "Numbers of codebooks of the LM and compression models don't match: ",
+        #     f"LM number of codebooks is {self.cfg.transformer_lm.n_q} vs ",
+        #     f"compression model numer of codebooks is {self.compression_model.num_codebooks}"
+        # )
         self.logger.info("Compression model has %d codebooks with %d cardinality, and a framerate of %d",
                          self.compression_model.num_codebooks, self.compression_model.cardinality,
                          self.compression_model.frame_rate)
@@ -359,6 +373,8 @@ class MusicGenSolver(base.StandardSolver):
             self._cached_batch_writer.save(infos)
 
         return condition_tensors, audio_tokens, padding_mask
+    
+
 
     def run_step(self, idx: int, batch: tp.Tuple[torch.Tensor, tp.List[SegmentWithAttributes]], metrics: dict) -> dict:
         """Perform one training or valid step on a given batch."""
@@ -366,6 +382,49 @@ class MusicGenSolver(base.StandardSolver):
 
         condition_tensors, audio_tokens, padding_mask = self._prepare_tokens_and_attributes(
             batch, check_synchronization_points)
+        
+        ########################################################################
+        # FART: here, we apply our tokenizer to the audio_tokens tensor
+        # audio_tokens is shape [Batch, 4, Seq] and should become of shape [Bathc, 1, Seq]
+        audio_tokens = audio_tokens.reshape(audio_tokens.shape[0], 1, -1) 
+        # conversion: audio_token -> unicode character -> self.tokenizer(audio_tokens_unicode) -> back to int format 
+        START_UTF_CODE: int = 0x130BA - 166
+        audio_tokens = audio_tokens + START_UTF_CODE 
+        batch_of_strings = []
+        for item_codes in audio_tokens.cpu():  # item_codes.shape = [1, Seq * 4]
+            code_points_list = item_codes.flatten()
+            unicode_string = "".join([chr(code.item()) for code in code_points_list])
+            tokenized_ids = self.custom_tokenizer.encode_as_ids(unicode_string)
+            batch_of_strings.append(tokenized_ids)
+
+            """
+            tokenized_string = self.custom_tokenizer.encode_as_pieces(unicode_string)
+            original_ints = [ord(c) - START_UTF_CODE for c in tokenized_string] # back to int format from unicode
+            batch_of_strings.append(original_ints)
+            """
+        
+        tensor_list = [torch.tensor(s) for s in batch_of_strings]
+        
+        # pad with special_token_id 
+        pad_value = self.model.special_token_id
+        audio_tokens = torch.nn.utils.rnn.pad_sequence(tensor_list, batch_first=True, padding_value=pad_value).to(audio_tokens.device)
+
+        # reshape to [B, K=1, T] if needed (if tokenizer returns [B, T])
+        if audio_tokens.dim() == 2:
+            audio_tokens = audio_tokens.unsqueeze(1)
+        
+        # padding_mask based on lengths
+        lengths = torch.tensor([len(s) for s in batch_of_strings]).to(audio_tokens.device)
+        max_len = audio_tokens.shape[-1]
+        # Create mask: [B, T] -> [B, 1, T] to match audio_tokens shape logic
+        padding_mask = (torch.arange(max_len, device=audio_tokens.device)[None, :] < lengths[:, None]).unsqueeze(1)
+        
+        # in theory no manual padding would be needed here 
+        # as build_pattern_sequence handles it, in practice wtf
+        # audio_tokens is now [B, 1, T]
+        # at this point it should go through the model cleanly
+        # FART: check that Encodec is working with 4 codebooks even if we change n_q to 1
+        ########################################################################
 
         self.deadlock_detect.update('tokens_and_conditions')
 
@@ -446,6 +505,11 @@ class MusicGenSolver(base.StandardSolver):
                           gen_duration: float, prompt_duration: tp.Optional[float] = None,
                           remove_text_conditioning: bool = False,
                           ) -> dict:
+        # FART: in audiocraft/grids/musicgen/musicgen_style_32khz.py there is the param 'generate.every': 25
+        # every generate.every epochs, a generation is run to evaluate audio quality
+        # for generating we need a detokenization logic
+        # maybe for our purpose generating is not even necessary since we will not evaluate audio quality
+        # instead, we will evaluate perplexity for example
         """Run generate step on a batch of optional audio tensor and corresponding attributes.
 
         Args:
@@ -489,13 +553,169 @@ class MusicGenSolver(base.StandardSolver):
         # generate by sampling from the LM
         with self.autocast:
             total_gen_len = math.ceil(gen_duration * self.compression_model.frame_rate)
+            
+            #############################################################################
+            # FART: Tokenize prompt_tokens if present
+            if prompt_tokens is not None:
+                # prompt_tokens is [B, K, T]
+                # We need to convert to SP tokens [B, 1, T_sp]
+                
+                # 1. Reshape/Flatten
+                # Same logic as run_step: flatten K and T
+                # [B, K, T] -> [B, 1, K*T]
+                B, K, T = prompt_tokens.shape
+                prompt_tokens_flat = prompt_tokens.reshape(B, 1, -1)
+                
+                START_UTF_CODE: int = 0x130BA - 166
+                prompt_tokens_flat = prompt_tokens_flat + START_UTF_CODE
+                
+                batch_of_strings = []
+                for item_codes in prompt_tokens_flat.cpu(): # item_codes is [1, K*T]
+                    code_points_list = item_codes.flatten()
+                    unicode_string = "".join([chr(code.item()) for code in code_points_list])
+                    tokenized_ids = self.custom_tokenizer.encode_as_ids(unicode_string)
+                    batch_of_strings.append(tokenized_ids)
+                    
+                tensor_list = [torch.tensor(s) for s in batch_of_strings]
+                pad_value = self.model.special_token_id
+                prompt_tokens = torch.nn.utils.rnn.pad_sequence(tensor_list, batch_first=True, padding_value=pad_value).to(prompt_tokens.device)
+                
+                if prompt_tokens.dim() == 2:
+                    prompt_tokens = prompt_tokens.unsqueeze(1)
+                    
+                # ipdate total_gen_len based on SP token rate
+                prompt_sp_len = prompt_tokens.shape[-1]
+                if prompt_duration is not None and prompt_duration > 0:
+                     sp_rate = prompt_sp_len / prompt_duration
+                     # add 20% margin to be safe
+                     total_gen_len = math.ceil(gen_duration * sp_rate * 1.2)
+                else:
+                     # fallback
+                     total_gen_len = int(gen_duration * self.compression_model.frame_rate * self.compression_model.num_codebooks)
+            else:
+                # unconditional generation
+                # conservative estimate: K * frame_rate (assuming 1 char = 1 token)
+                # this is an upper bound on the rate.
+                sp_rate = self.compression_model.frame_rate * self.compression_model.num_codebooks
+                total_gen_len = math.ceil(gen_duration * sp_rate)
+            #############################################################################
+
             gen_tokens = self.model.generate(
                 prompt_tokens, attributes, max_gen_len=total_gen_len,
                 num_samples=num_samples, **self.generation_params)
 
         # generate audio from tokens
         assert gen_tokens.dim() == 3
-        gen_audio = self.compression_model.decode(gen_tokens, None)
+        
+        ########################################################################
+        # FART: detokenization logic
+        # gen_tokens is [B, 1, Seq] containing SentencePiece IDs
+        # before the generation step was passing SentencePiece tokens (up to 32000) 
+        # directly to the EnCodec decoder (expecting 0-2048). 
+        # we need to convert back to EnCodec indices [B, 4, T]
+        
+        START_UTF_CODE: int = 0x130BA - 166
+        
+        # 1. convert SP IDs to unicode strings
+        # 2. convert unicode strings to integer codes (i.e. indici encodec)
+        
+        # gen_tokens is [B, 1, Seq], squeeze to [B, Seq]
+        gen_tokens_sq = gen_tokens.squeeze(1)
+        
+        decoded_codes = []
+        for seq_ids in gen_tokens_sq:
+            # seq_ids is [Seq]
+            # decode_ids expects list of ints
+            ids_list = seq_ids.tolist()
+            # FART: Clamp ids to be within valid range for the tokenizer
+            # and remove special tokens if necessary
+            vocab_size = self.custom_tokenizer.vocab_size()
+            ids_list = [
+                min(max(0, idx), vocab_size - 1) 
+                for idx in ids_list 
+                if idx != self.model.special_token_id
+            ]
+            unicode_string = self.custom_tokenizer.decode_ids(ids_list)
+            
+            # convert unicode string back to integers
+            # Note: we would need to handle potential issues if the string doesn't map perfectly ???
+            # but assuming the model learned to produce valid tokens:
+            code_points = [ord(c) - START_UTF_CODE for c in unicode_string]
+            decoded_codes.append(torch.tensor(code_points))
+            
+        # pad sequences if they have different lengths (though generate usually returns fixed length)
+        # but decode_ids might result in different number of code points?
+        # ideally they should be consistent if the model is robust.
+        # for now, let's pad with 0 or truncate to min length? 
+        # actually, let's just pad.
+        
+        # we need to stack them.
+        # check lengths
+        lengths = [len(c) for c in decoded_codes]
+        max_len = max(lengths)
+        
+        # we need the total length to be divisible by 4 (number of codebooks)
+        # if not, we might need to truncate or pad.
+        # since we are reshaping to [B, 4, T], L must be multiple of 4.
+        
+        padded_codes = []
+        for c in decoded_codes:
+            l = len(c)
+            rem = l % 4
+            if rem != 0:
+                # pad to next multiple of 4? or truncate?
+                # truncating is safer to avoid index errors if we pad with 0 which is a valid code.. 
+                # let's truncate to nearest multiple of 4.
+                c = c[:l - rem]
+            padded_codes.append(c)
+            
+        # now stack - they might still be different lengths if generation produced different amount of "content"
+        # but self.model.generate returns fixed sequence length of tokens.
+        # however, SP tokens -> characters mapping is variable length? 
+        # no, SP usually maps tokens to pieces. 
+        # wait, the user's tokenization:
+        # unicode_string = "".join([chr(code.item()) for code in code_points_list])
+        # tokenized_ids = self.custom_tokenizer.encode_as_ids(unicode_string)
+        
+        # if SP is BPE/Unigram, one token can map to multiple characters (code points).
+        # so yes, the number of code points can vary per sequence even if number of SP tokens is same.
+        
+        # we need to pad to the max length in the batch to stack.
+        # and ensure max length is multiple of 4.
+        
+        max_len = max([len(c) for c in padded_codes]) if padded_codes else 0
+        if max_len % 4 != 0:
+            max_len += (4 - (max_len % 4))
+            
+        final_tensor = torch.zeros(len(padded_codes), max_len, dtype=torch.long, device=gen_tokens.device)
+        for i, c in enumerate(padded_codes):
+            final_tensor[i, :len(c)] = c.to(gen_tokens.device)
+            
+        # reshape to [B, 4, T]
+        # note: final_tensor is [B, L]
+        # we want [B, 4, L/4]
+        # but wait, the original reshape was (B, 1, -1) from (B, 4, T).
+        # so it was flattened as K then T?
+        # no, (B, 4, T) -> (B, 1, 4*T) flattens K then T?
+        # pytorch reshape/view is row-major.
+        # (B, 4, T) has strides (4T, T, 1).
+        # flattening to (B, 4T) keeps the order:
+        # (0,0), (0,1)...(0,T-1), (1,0)...
+        # so yes, it is "Codebook 0 all timesteps", then "Codebook 1 all timesteps".
+        
+        # so we reshape back:
+        # [B, 4*T] -> [B, 4, T]
+        
+        B_size = final_tensor.shape[0]
+        T_new = final_tensor.shape[1] // 4
+        
+        gen_codes = final_tensor.reshape(B_size, 4, T_new)
+        
+        # ensure indices are within bounds [0, 2048)
+        gen_codes = gen_codes.clamp(0, 2047)
+
+        gen_audio = self.compression_model.decode(gen_codes, None)
+        ########################################################################
 
         bench_end = time.time()
         gen_outputs = {

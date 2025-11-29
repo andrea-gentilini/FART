@@ -1,12 +1,12 @@
 default:
-  dora_dir: /tmp/audiocraft_${oc.env:USER}
+  dora_dir: /home/andleo/audiocraft_outputs
   partitions:
     global: debug
     team: debug
-  reference_dir: /tmp
+  reference_dir: /home/andleo/audiocraft_reference
 darwin:  # if we detect we are on a Mac, then most likely we are doing unit testing etc.
-  dora_dir: /tmp/audiocraft_${oc.env:USER}
+  dora_dir: /home/andleo/audiocraft_outputs
   partitions:
     global: debug
     team: debug
-  reference_dir: /tmp
+  reference_dir: /home/andleo/audiocraft_reference

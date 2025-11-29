@@ -8,22 +8,33 @@ defaults:
 lm_model: transformer_lm
 
 codebooks_pattern:
-  modeling: delay
+  ########################################################################
+  # modeling: delay
+  modeling: unroll # FART: also, let's change this one to "unroll"
+  ########################################################################
   delay:
     delays: [0, 1, 2, 3]
     flatten_first: 0
     empty_initial: 0
   unroll:
-    flattening: [0, 1, 2, 3]
-    delays: [0, 0, 0, 0]
+    ########################################################################
+    # flattening: [0, 1, 2, 3] # FART: if we change to n_q=1, i think we should change this to [0]
+    # delays: [0, 0, 0, 0]
+    flattening: [0] # FART: if we change to n_q=1, i think we should change this to [0]
+    delays: [0] # FART: same thing here, i think we should change to [0]
+    ########################################################################
   music_lm:
     group_by: 2
   coarse_first:
     delays: [0, 0, 0]
 
 transformer_lm:
-  n_q: 4
-  card: 2048
+  ########################################################################
+  # n_q: 4  
+  n_q: 1 # FART: this should be 1
+  # card: 2048
+  card: 32000  # FART: this should be vocab_size of tokenizer (e.g. 128k)
+  ########################################################################
   memory_efficient: true
   bias_proj: false
   bias_ff: false
