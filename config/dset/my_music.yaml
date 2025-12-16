@@ -4,7 +4,7 @@
 datasource:
   max_sample_rate: 32000
   max_channels: 2
-  train: /home/andleo/datasets/jamendo_subset/train_and.jsonl.gz
-  valid: /home/andleo/datasets/jamendo_subset/valid_and.jsonl.gz
-  evaluate: /home/andleo/datasets/jamendo_subset/valid_and.jsonl.gz
-  generate: /home/andleo/datasets/jamendo_subset/valid_and.jsonl.gz
+  train: /home/andleo/jamendo_for_audiocraft_big_not_complete/train.jsonl.gz
+  valid: /home/andleo/jamendo_for_audiocraft_big_not_complete/valid.jsonl.gz
+  evaluate: /home/andleo/jamendo_for_audiocraft_big_not_complete/valid.jsonl.gz
+  generate: /home/andleo/jamendo_for_audiocraft_big_not_complete/valid.jsonl.gz
