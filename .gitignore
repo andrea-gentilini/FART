@@ -60,3 +60,11 @@ dataset/*
 /notebooks
 /local_scripts
 /notes
+
+# Local training outputs and model artifacts
+/outputs/
+/reference/
+*.model
+*.vocab
+*.ckpt
+*.th

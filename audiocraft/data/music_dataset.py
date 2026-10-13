@@ -95,7 +95,10 @@ class MusicInfo(AudioInfo):
         # allow a subset of attributes to not be loaded from the dictionary
         # these attributes may be populated later
         post_init_attributes = ['self_wav', 'joint_embed']
-        optional_fields = ['keywords', 'key', 'bpm', 'genre', 'moods', 'instrument', 'title', 'artist', 'name', 'description'] # FART: added those as optional field for the dataset as we don't need them
+        optional_fields = [
+            'keywords', 'key', 'bpm', 'genre', 'moods', 'instrument',
+            'title', 'artist', 'name', 'description',
+        ]
 
         for _field in fields(cls):
             if _field.name in post_init_attributes:

@@ -1,16 +1,18 @@
-name: audiocraft_tests
+name: AudioCraft full suite (manual)
+# The fork's CPU regressions run on every push in fart_tests.yml. The full
+# upstream suite installs the complete AudioCraft stack and downloads models.
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main, audiocraft_pub_main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   run_tests:
     name: Run tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: ./.github/actions/audiocraft_build
       - name: Run unit tests
         run: |

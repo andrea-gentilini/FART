@@ -1,0 +1,24 @@
+# @package __global__
+
+defaults:
+  - musicgen/musicgen_base_32khz
+  - _self_
+
+fart:
+  tokenizer_path: ${oc.env:FART_TOKENIZER_PATH}  # Or override with fart.tokenizer_path=/path/to/music.model.
+  unicode_offset: 77844
+
+transformer_lm:
+  n_q: 1
+  card: 32000  # Must equal the supplied SentencePiece vocabulary size.
+
+codebooks_pattern:
+  modeling: unroll
+  unroll:
+    flattening: [0]
+    delays: [0]
+
+generate:
+  lm:
+    # Codebook-major flattening is not prefix-preserving for audio continuation.
+    prompted_samples: false

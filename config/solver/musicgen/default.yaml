@@ -21,6 +21,11 @@ compression_model_checkpoint: ???
 # will be used.
 compression_model_n_q: null
 
+# Optional lossless SentencePiece adaptation; standard MusicGen leaves it off.
+fart:
+  tokenizer_path: null
+  unicode_offset: 77844
+
 tokens:
   padding_with_special_token: false
 

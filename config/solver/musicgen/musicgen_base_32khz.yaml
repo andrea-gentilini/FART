@@ -4,7 +4,7 @@
 # for the base MusicGen model (text-to-music)
 # on monophonic audio sampled at 32 kHz
 defaults:
-  - musicgen/default
+  - /solver/musicgen/default
   - /model: lm/musicgen_lm
   - override /dset: audio/default
   - _self_

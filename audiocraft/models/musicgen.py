@@ -11,6 +11,7 @@ and provide easy access to the generation API.
 
 import typing as tp
 import warnings
+import math
 
 import torch
 
@@ -21,6 +22,7 @@ from .builders import get_debug_compression_model, get_debug_lm_model
 from .loaders import load_compression_model, load_lm_model
 from ..data.audio_utils import convert_audio
 from ..modules.conditioners import ConditioningAttributes, WavCondition, StyleConditioner
+from ..utils.audio_tokenizer import tokenizer_from_config, decode_generated_audio
 
 
 MelodyList = tp.List[tp.Optional[torch.Tensor]]
@@ -49,12 +51,16 @@ class MusicGen(BaseGenModel):
             otherwise, inferred from the training params.
     """
     def __init__(self, name: str, compression_model: CompressionModel, lm: LMModel,
-                 max_duration: tp.Optional[float] = None):
+                 max_duration: tp.Optional[float] = None,
+                 tokenizer_path: tp.Optional[str] = None):
         super().__init__(name, compression_model, lm, max_duration)
+        self.audio_tokenizer = tokenizer_from_config(
+            self.cfg, self.compression_model, lm.card, lm.num_codebooks, tokenizer_path)
         self.set_generation_params(duration=15)  # default duration
 
     @staticmethod
-    def get_pretrained(name: str = 'facebook/musicgen-melody', device=None):
+    def get_pretrained(name: str = 'facebook/musicgen-melody', device=None,
+                       tokenizer_path: tp.Optional[str] = None):
         """Return pretrained model, we provide four models:
         - facebook/musicgen-small (300M), text to music,
           # see: https://huggingface.co/facebook/musicgen-small
@@ -66,6 +72,9 @@ class MusicGen(BaseGenModel):
           # see: https://huggingface.co/facebook/musicgen-large
         - facebook/musicgen-style (1.5 B), text and style to music,
           # see: https://huggingface.co/facebook/musicgen-style
+
+        For a FART checkpoint, tokenizer_path can relocate its required local
+        SentencePiece model. Its mapping and vocabulary must match training.
         """
         if device is None:
             if torch.cuda.device_count():
@@ -91,7 +100,7 @@ class MusicGen(BaseGenModel):
             lm.condition_provider.conditioners['self_wav'].match_len_on_eval = True
             lm.condition_provider.conditioners['self_wav']._use_masking = False
 
-        return MusicGen(name, compression_model, lm)
+        return MusicGen(name, compression_model, lm, tokenizer_path=tokenizer_path)
 
     def set_generation_params(self, use_sampling: bool = True, top_k: int = 250,
                               top_p: float = 0.0, temperature: float = 1.0,
@@ -259,6 +268,19 @@ class MusicGen(BaseGenModel):
         Returns:
             torch.Tensor: Generated audio, of shape [B, C, T], T is defined by the generation params.
         """
+        if self.audio_tokenizer is not None:
+            if prompt_tokens is not None:
+                raise ValueError("FART codebook-major tokenization does not support audio continuation.")
+            if self.duration > self.max_duration:
+                raise ValueError("FART long-form generation is not supported.")
+            max_gen_len = math.ceil(self.max_duration * self.frame_rate) * self.compression_model.num_codebooks
+            if self.duration <= 0:
+                raise ValueError("Generation duration must be positive.")
+            callback = self._progress_callback if progress else None
+            with self.autocast:
+                return self.lm.generate(None, attributes, num_samples=len(attributes),
+                                        max_gen_len=max_gen_len, callback=callback,
+                                        **self.generation_params)
         total_gen_len = int(self.duration * self.frame_rate)
         max_prompt_len = int(min(self.duration, self.max_duration) * self.frame_rate)
         current_gen_offset: int = 0
@@ -336,3 +358,11 @@ class MusicGen(BaseGenModel):
 
             gen_tokens = torch.cat(all_tokens, dim=-1)
         return gen_tokens
+
+    def generate_audio(self, gen_tokens: torch.Tensor) -> torch.Tensor:
+        if self.audio_tokenizer is None:
+            return super().generate_audio(gen_tokens)
+        with torch.no_grad():
+            return decode_generated_audio(
+                self.audio_tokenizer, self.compression_model, gen_tokens, self.duration,
+                math.ceil(self.max_duration * self.frame_rate))

@@ -4,7 +4,7 @@
 datasource:
   max_sample_rate: 32000
   max_channels: 2
-  train: /home/andleo/jamendo_for_audiocraft_big_not_complete/train.jsonl.gz
-  valid: /home/andleo/jamendo_for_audiocraft_big_not_complete/valid.jsonl.gz
-  evaluate: /home/andleo/jamendo_for_audiocraft_big_not_complete/valid.jsonl.gz
-  generate: /home/andleo/jamendo_for_audiocraft_big_not_complete/valid.jsonl.gz
+  train: ${oc.env:FART_DATASET_ROOT}/train.jsonl.gz
+  valid: ${oc.env:FART_DATASET_ROOT}/valid.jsonl.gz
+  evaluate: ${oc.env:FART_DATASET_ROOT}/valid.jsonl.gz
+  generate: ${oc.env:FART_DATASET_ROOT}/valid.jsonl.gz

@@ -1,6 +1,6 @@
 # @package __global__
 
-dataset:
+datasource:
   max_sample_rate: ???
   max_channels: ???
 
