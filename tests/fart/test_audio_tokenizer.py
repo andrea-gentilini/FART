@@ -317,3 +317,21 @@ def test_tokenizer_excludes_control_and_non_codec_pieces(tmp_path):
     for piece_id in allowed:
         text = processor.decode_ids([piece_id])
         assert text and set(text) <= set(alphabet)
+
+
+def test_whitespace_prefixed_pieces_cannot_enter_generated_audio(tmp_path):
+    alphabet = ''.join(chr(77844 + i) for i in range(4))
+    corpus = tmp_path / 'prefix.txt'
+    corpus.write_text('\n'.join(alphabet * 10 for _ in range(20)))
+    prefix = tmp_path / 'prefix'
+    spm.SentencePieceTrainer.train(
+        input=str(corpus), model_prefix=str(prefix), vocab_size=24,
+        model_type='bpe', hard_vocab_limit=False, character_coverage=1.0,
+        normalization_rule_name='identity', add_dummy_prefix=True,
+        split_by_unicode_script=False, split_by_whitespace=False,
+        bos_id=-1, eos_id=-1, pad_id=-1, minloglevel=2)
+    processor = spm.SentencePieceProcessor(model_file=str(prefix) + '.model')
+    tokenizer = AudioTokenTokenizer(str(prefix) + '.model', 4, 2, processor.get_piece_size())
+    whitespace_pieces = {i for i in range(tokenizer.cardinality) if '\u2581' in processor.id_to_piece(i)}
+    assert whitespace_pieces
+    assert whitespace_pieces.issubset(tokenizer.forbidden_token_ids)

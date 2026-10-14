@@ -68,3 +68,7 @@ dataset/*
 *.vocab
 *.ckpt
 *.th
+
+# Small fitted tokenizer published with its reproducible example
+!/examples/fart-tokenizer-smoke/tokenizer/tokenizer.model
+!/examples/fart-tokenizer-smoke/tokenizer/tokenizer.vocab

@@ -41,7 +41,9 @@ class AudioTokenTokenizer:
         for piece_id in range(self.cardinality):
             reserved = (self.processor.is_unknown(piece_id) or self.processor.is_control(piece_id)
                         or self.processor.is_unused(piece_id))
-            text = '' if reserved else self.processor.decode_ids([piece_id])
+            # Inspect the stored piece: decoding a single leading whitespace marker
+            # can hide it, while the same piece inside a sequence introduces a space.
+            text = '' if reserved else self.processor.id_to_piece(piece_id)
             if not text or any(not unicode_offset <= ord(c) < end for c in text):
                 forbidden.append(piece_id)
         self.forbidden_token_ids = tuple(forbidden)

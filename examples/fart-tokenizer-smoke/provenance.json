@@ -1,0 +1,56 @@
+{
+  "experiment": "bundled-audio-tokenizer-smoke",
+  "scope": "Tokenization and exact code reconstruction on two short example clips.",
+  "limitations": [
+    "One training clip and one held-out clip are not a representative benchmark.",
+    "EnCodec 24 kHz at 3 kbps differs from the MusicGen 32 kHz codec.",
+    "This tokenizer cannot be paired with a standard MusicGen/FART 32 kHz checkpoint.",
+    "No language model is trained and no audio-generation quality or speedup is measured.",
+    "Raw flattened-code compression is distinct from MusicGen autoregressive step count."
+  ],
+  "codec": {
+    "name": "encodec_model_24khz",
+    "sample_rate": 24000,
+    "bandwidth_kbps": 3.0,
+    "num_codebooks": 4,
+    "cardinality": 1024,
+    "checkpoint": "encodec_24khz-d7cc33bc.th",
+    "checkpoint_sha256": "d7cc33bcf1aad7f2dad9836f36431530744abeace3ca033005e3290ed4fa47bf"
+  },
+  "sources": [
+    {
+      "split": "train",
+      "source": "dataset/example/electro_1.mp3",
+      "source_sha256": "06b7eef8f49257ab0b04d52ee681a74c4b6cbaa7874a8716ebdd974ca50c7c6f",
+      "seconds": 8.0,
+      "samples": 192000,
+      "frames": 600,
+      "codes": "train/electro_1.npy",
+      "codes_sha256": "25880270de41da61350b23899c327a2ee78e837f5236ac4275b7d40e4654530b"
+    },
+    {
+      "split": "heldout",
+      "source": "dataset/example/electro_2.mp3",
+      "source_sha256": "8290c25d6c3342db6f20f548c156c5d1fec519b26b59c0b6359a6fd621f25307",
+      "seconds": 8.0,
+      "samples": 192000,
+      "frames": 600,
+      "codes": "heldout/electro_2.npy",
+      "codes_sha256": "f49f6ab5e507300e25a8e076fd34eeb3fcfff5825ed3fa759e09ffc6e7253370"
+    }
+  ],
+  "environment": {
+    "torch": "2.1.0",
+    "torchaudio": "2.1.0",
+    "numpy": "1.26.4",
+    "encodec": "0.1.1",
+    "sentencepiece": "0.2.2"
+  },
+  "platform": {
+    "python": "3.10.17",
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "evaluation_sha256": "ddef71193a0b0aec164be217806bf94f70fe717362f56cfdd1975eb7f446c0ad"
+}

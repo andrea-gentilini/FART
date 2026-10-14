@@ -1,0 +1,48 @@
+{
+  "actual_vocab_size": 2048,
+  "config": {
+    "codec_cardinality": 1024,
+    "layout": "codebook-major",
+    "num_codebooks": 4,
+    "unicode_offset": 77844
+  },
+  "interpretation": "Ratios describe token counts only. MusicGen processes codebooks in parallel; codec frames are a separate baseline. No generation speedup or audio quality improvement is established by this tokenizer evaluation.",
+  "model_sha256": "ff9fbd43c11df772e625c92fd733a3c09e123727c8634fe17a89ce99f87da99b",
+  "samples": [
+    {
+      "content_sha256": "9d5c08a20185315c3132680a7bbf824a46638aec07e2d7eabb75531a24fdc675",
+      "file": "electro_2.npy",
+      "frames": 600,
+      "lm_tokens": 2395,
+      "lm_tokens_per_codec_frame": 3.9916666666666667,
+      "raw_codes": 2400,
+      "raw_codes_per_lm_token": 1.0020876826722338,
+      "roundtrip_exact": true,
+      "sha256": "f49f6ab5e507300e25a8e076fd34eeb3fcfff5825ed3fa759e09ffc6e7253370"
+    }
+  ],
+  "schema_version": 1,
+  "source_commit": "dd43d33c9aa628445aee58377d3955a802cab624",
+  "source_files_sha256": {
+    "audiocraft/utils/audio_tokenizer.py": "353e4da0808599de6178111adfcc509df8db4cbc1f5d155bc023660332bb116c",
+    "scripts/fart_tokenizer.py": "35c3c950bb84d58ecb12737f0c8a3ccfe3015b4f7cb3931e5b4d3c6cf54bfe34"
+  },
+  "source_tree_dirty": false,
+  "summary": {
+    "codec_frames": 600,
+    "lm_tokens": 2395,
+    "lm_tokens_per_codec_frame": 3.9916666666666667,
+    "raw_code_reduction_fraction": 0.002083333333333326,
+    "raw_codes": 2400,
+    "raw_codes_per_lm_token": 1.0020876826722338,
+    "roundtrip_exact": true,
+    "sample_count": 1
+  },
+  "training_overlap_count": 0,
+  "versions": {
+    "numpy": "1.26.4",
+    "python": "3.10.17",
+    "sentencepiece": "0.2.2",
+    "torch": "2.1.0"
+  }
+}
