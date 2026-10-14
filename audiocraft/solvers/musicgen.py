@@ -499,12 +499,14 @@ class MusicGenSolver(base.StandardSolver):
         # code count is an upper budget; decode each sample before duration crop.
         with self.autocast:
             total_gen_len = math.ceil(gen_duration * self.compression_model.frame_rate)
+            token_constraints = {}
             if self.audio_tokenizer is not None:
                 layout_frames = math.ceil(self.cfg.dataset.segment_duration * self.compression_model.frame_rate)
                 total_gen_len = layout_frames * self.compression_model.num_codebooks
+                token_constraints["forbidden_token_ids"] = self.audio_tokenizer.forbidden_token_ids
             gen_tokens = self.model.generate(
                 prompt_tokens, attributes, max_gen_len=total_gen_len,
-                num_samples=num_samples, **self.generation_params)
+                num_samples=num_samples, **self.generation_params, **token_constraints)
 
         assert gen_tokens.dim() == 3
         if self.audio_tokenizer is None:

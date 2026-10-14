@@ -330,7 +330,8 @@ class LMModel(StreamingModule):
                            top_p: float = 0.0,
                            cfg_coef: tp.Optional[float] = None,
                            cfg_coef_beta: tp.Optional[float] = None,
-                           two_step_cfg: tp.Optional[bool] = None) -> torch.Tensor:
+                           two_step_cfg: tp.Optional[bool] = None,
+                           forbidden_token_ids: tp.Optional[tp.Sequence[int]] = None) -> torch.Tensor:
         """Sample next token from the model given a sequence and a set of conditions. The model supports
         multiple sampling strategies (greedy sampling, softmax, top-k, top-p...).
 
@@ -402,6 +403,9 @@ class LMModel(StreamingModule):
 
         logits = logits.permute(0, 1, 3, 2)  # [B, K, card, T]
         logits = logits[..., -1]  # [B x K x card]
+        if forbidden_token_ids:
+            logits = logits.clone()
+            logits[..., list(forbidden_token_ids)] = -float('inf')
 
         # Apply softmax for sampling if temp > 0. Else, do greedy sampling to avoid zero division error.
         if use_sampling and temp > 0.0:
@@ -433,6 +437,7 @@ class LMModel(StreamingModule):
                  remove_prompts: bool = False,
                  check: bool = False,
                  callback: tp.Optional[tp.Callable[[int, int], None]] = None,
+                 forbidden_token_ids: tp.Optional[tp.Sequence[int]] = None,
                  ) -> torch.Tensor:
         """Generate tokens sampling from the model given a prompt or unconditionally. Generation can
         be performed in a greedy fashion or using sampling with top K and top P strategies.
@@ -456,10 +461,18 @@ class LMModel(StreamingModule):
             remove_prompts (bool): Whether to remove prompts from generation or not.
             check (bool): Whether to apply further checks on generated sequence.
             callback (Callback, optional): Callback function to report generation progress.
+            forbidden_token_ids (sequence of int, optional): Vocabulary IDs excluded from generation.
         Returns:
             torch.Tensor: Generated tokens.
         """
         assert not self.training, "generation shouldn't be used in training mode."
+        if forbidden_token_ids is not None:
+            if any(isinstance(i, bool) or not isinstance(i, int) or i < 0 or i >= self.card
+                   for i in forbidden_token_ids):
+                raise ValueError("Forbidden token IDs must be integers within the vocabulary.")
+            forbidden_token_ids = tuple(sorted(set(forbidden_token_ids)))
+            if len(forbidden_token_ids) == self.card:
+                raise ValueError("Generation requires at least one allowed token ID.")
         first_param = next(iter(self.parameters()))
         device = first_param.device
 
@@ -549,7 +562,8 @@ class LMModel(StreamingModule):
                 # sample next token from the model, next token shape is [B, K, 1]
                 next_token = self._sample_next_token(
                     curr_sequence, cfg_conditions, unconditional_state, use_sampling, temp, top_k, top_p,
-                    cfg_coef=cfg_coef, cfg_coef_beta=cfg_coef_beta, two_step_cfg=two_step_cfg)
+                    cfg_coef=cfg_coef, cfg_coef_beta=cfg_coef_beta, two_step_cfg=two_step_cfg,
+                    forbidden_token_ids=forbidden_token_ids)
                 # ensure the tokens that should be masked are properly set to special_token_id
                 # as the model never output special_token_id
                 valid_mask = mask[..., offset:offset+1].expand(B, -1, -1)

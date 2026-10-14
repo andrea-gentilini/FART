@@ -31,5 +31,5 @@ jobs:
         run: python -m pytest tests/fart -q
       - name: Check modified Python code
         run: |
-          python -m flake8 audiocraft/utils/audio_tokenizer.py audiocraft/solvers/musicgen.py audiocraft/models/musicgen.py audiocraft/data/music_dataset.py make_jamendo_subset.py tests/fart
+          python -m flake8 audiocraft/utils/audio_tokenizer.py audiocraft/solvers/musicgen.py audiocraft/models/musicgen.py audiocraft/models/lm.py audiocraft/data/music_dataset.py make_jamendo_subset.py scripts/fart_tokenizer.py scripts/fart_codec_smoke.py tests/fart
           python -m compileall -q audiocraft make_jamendo_subset.py

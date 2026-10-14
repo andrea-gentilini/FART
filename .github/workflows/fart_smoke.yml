@@ -1,0 +1,39 @@
+name: FART tokenizer audio experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audio-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: 1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.10'
+      - name: Install the CPU experiment environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libsndfile1
+          python -m pip install torch==2.1.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements-fart-smoke.txt
+      - name: Extract codec tokens and evaluate a held-out clip
+        run: python scripts/fart_codec_smoke.py --output outputs/tokenizer-smoke
+      - name: Save the tokenizer and measured results
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fart-tokenizer-smoke
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            outputs/tokenizer-smoke/train/
+            outputs/tokenizer-smoke/heldout/
+            outputs/tokenizer-smoke/tokenizer/
+            outputs/tokenizer-smoke/evaluation.json
+            outputs/tokenizer-smoke/provenance.json

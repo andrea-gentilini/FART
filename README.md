@@ -2,7 +2,7 @@
 
 FART is Andrea Gentilini's research fork of [Meta AudioCraft](https://github.com/facebookresearch/audiocraft), exploring learned tokenization of discrete audio representations for music generation. It adapts MusicGen's training and generation solver to model SentencePiece tokens over EnCodec codes, with the aim of shortening the sequences processed by the autoregressive model.
 
-This repository contains the implementation and experiment configuration. Trained FART checkpoints, the fitted SentencePiece tokenizer, and a benchmark-results bundle are not included.
+This repository contains the implementation and experiment configuration. A small tokenizer experiment is included with its fitted tokenizer, held-out evaluation and reproduction commands. Trained FART music-generation checkpoints and a representative benchmark-results bundle are not included.
 
 ## Approach
 
@@ -17,6 +17,17 @@ Waveform <- EnCodec decoder <- Audio codes <- SentencePiece decode
 The four EnCodec codebook streams are flattened into one sequence and mapped to Unicode characters. A fitted SentencePiece model groups recurring code sequences into variable-length tokens. The language model predicts this single token stream; generation maps its output back into EnCodec codes for waveform decoding. The tokenizer vocabulary and language-model output vocabulary must match.
 
 FART training is selected explicitly with `solver=musicgen/fart`. The `MusicGen` inference API can load a compatible local FART checkpoint with its matching tokenizer; inherited pretrained-model examples use standard AudioCraft checkpoints.
+
+## Try the tokenizer
+
+The [tokenizer guide](docs/FART_TOKENIZER.md) covers training on codec arrays, checking exact reconstruction, and measuring token counts on held-out clips. A small CPU experiment uses two bundled audio excerpts and the public EnCodec 24 kHz model. It can run locally or through the manual [audio experiment workflow](.github/workflows/fart_smoke.yml).
+
+```bash
+python -m pip install -r requirements-fart-smoke.txt
+python scripts/fart_codec_smoke.py --output outputs/tokenizer-smoke
+```
+
+Use Python 3.10 with `ffmpeg` installed. The command downloads only the codec weights and keeps them inside the output directory. The [recorded example](examples/fart-tokenizer-smoke/README.md) includes measurements and limitations. Its tokenizer is specific to this small 24 kHz example.
 
 ## Contributions in this fork
 
@@ -81,9 +92,9 @@ dora run \
   fart.tokenizer_path=/path/to/music.model
 ```
 
-This is a configuration example, not a reproduced training run. The tokenizer must use the repository's codebook-major flattening and Unicode offset (`77844`); `transformer_lm.card` must equal its vocabulary size, which defaults to `32000` in the FART configuration. Tokenizer fitting and its training corpus are not included. See the [training guide](docs/TRAINING.md) for experiment management.
+This is a configuration example, not a reproduced training run. The tokenizer must use the repository's codebook-major flattening and Unicode offset (`77844`); `transformer_lm.card` must equal its vocabulary size, which defaults to `32000` in the FART configuration. Use the [tokenizer training command](docs/FART_TOKENIZER.md) with code arrays from your own training split. The original research tokenizer and training corpus are not included. See the [training guide](docs/TRAINING.md) for experiment management.
 
-FART generation is experimental. It generates a full training-segment layout, decodes the fixed codebook boundaries, then crops the waveform to the requested duration. The solver and inference API support generation without an audio continuation prompt; continuation and long-form generation are unsupported. A relocated tokenizer can be supplied to `MusicGen.get_pretrained(local_checkpoint, tokenizer_path='/path/to/music.model')`. Generation quality with a trained FART checkpoint has not been validated by the included CPU tests.
+FART generation is experimental. It generates a full training-segment layout, decodes the fixed codebook boundaries, then crops the waveform to the requested duration. The solver and inference API support generation without an audio continuation prompt; continuation and long-form generation are unsupported. A relocated tokenizer can be supplied to `MusicGen.get_pretrained(local_checkpoint, tokenizer_path='/path/to/music.model')`. Reserved and non-audio SentencePiece IDs are excluded during sampling. Generation still uses a fixed token budget, so token compression alone does not establish an inference speedup. Generation quality with a trained FART checkpoint has not been validated by the included CPU tests.
 
 ## Evaluation and tests
 

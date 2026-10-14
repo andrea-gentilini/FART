@@ -280,6 +280,7 @@ class MusicGen(BaseGenModel):
             with self.autocast:
                 return self.lm.generate(None, attributes, num_samples=len(attributes),
                                         max_gen_len=max_gen_len, callback=callback,
+                                        forbidden_token_ids=self.audio_tokenizer.forbidden_token_ids,
                                         **self.generation_params)
         total_gen_len = int(self.duration * self.frame_rate)
         max_prompt_len = int(min(self.duration, self.max_duration) * self.frame_rate)

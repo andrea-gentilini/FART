@@ -191,6 +191,10 @@ def test_solver_generation_uses_correct_token_domain(tokenizer, fart):
     batch = (torch.ones(1, 1, 4), [SimpleNamespace(to_condition_attributes=lambda: object())])
     result = method(solver, batch, gen_duration=0.5)
     assert calls[0]['max_gen_len'] == (8 if fart else 2)
+    if fart:
+        assert calls[0]['forbidden_token_ids'] == tokenizer.forbidden_token_ids
+    else:
+        assert 'forbidden_token_ids' not in calls[0]
     assert torch.equal(decoded[0], codes)
     assert result['gen_audio'].shape[-1] == (2 if fart else 4)
     if fart:
@@ -213,6 +217,7 @@ def test_public_api_uses_training_layout_and_rejects_continuation(tokenizer):
                             autocast=contextlib.nullcontext(), _progress_callback=None)
     method(model, [object()], None)
     assert calls[0]['max_gen_len'] == 8
+    assert calls[0]['forbidden_token_ids'] == tokenizer.forbidden_token_ids
     with pytest.raises(ValueError, match='continuation'):
         method(model, [object()], torch.zeros(1, 2, 1))
     model.duration = 2
@@ -245,3 +250,70 @@ def test_solver_training_masks_sentencepiece_padding(tokenizer):
     assert valid.sum(2)[0] < valid.sum(2)[1]
     assert torch.all(encoded[~valid] == tokenizer.cardinality)
     assert torch.equal(tokenizer.decode_sequence(encoded[0, 0, valid[0, 0]]), codes[:1, :, :2])
+
+
+def sampling_functions():
+    """Load the actual small sampling utilities without optional AudioCraft imports."""
+    source = ast.parse((ROOT / 'audiocraft/utils/utils.py').read_text())
+    functions = [node for node in source.body if isinstance(node, ast.FunctionDef)
+                 and node.name in {'sample_top_k', 'sample_top_p', 'multinomial'}]
+    tree = ast.Module(body=functions, type_ignores=[])
+    namespace = {'torch': torch}
+    exec(compile(tree, 'audiocraft/utils/utils.py', 'exec'), namespace)
+    return SimpleNamespace(**namespace)
+
+
+@pytest.mark.parametrize('sampling,top_k,top_p', [(False, 0, 0), (True, 0, 0),
+                                                  (True, 3, 0), (True, 0, 0.9)])
+def test_generation_excludes_reserved_ids_before_sampling(tokenizer, sampling, top_k, top_p):
+    method = isolated_method('audiocraft/models/lm.py', 'LMModel', '_sample_next_token')
+    method.__globals__['utils'] = sampling_functions()
+    unknown = tokenizer.processor.unk_id()
+
+    class Model:
+        cfg_coef = 1.0
+        two_step_cfg = False
+        _fsdp = None
+
+        def __call__(self, sequence, **kwargs):
+            logits = torch.zeros(sequence.shape[0], 1, 1, tokenizer.cardinality)
+            logits[..., unknown] = 10000  # This token would otherwise always win.
+            return logits
+
+    sequence = torch.ones(64, 1, 1, dtype=torch.long)
+    without_mask = method(Model(), sequence, {}, {}, use_sampling=sampling, top_k=top_k, top_p=top_p)
+    assert torch.all(without_mask == unknown)
+    generated = method(Model(), sequence, {}, {}, use_sampling=sampling, top_k=top_k, top_p=top_p,
+                       forbidden_token_ids=tokenizer.forbidden_token_ids)
+    assert generated.shape == (64, 1, 1)
+    assert not any(i in tokenizer.forbidden_token_ids for i in generated.flatten().tolist())
+
+
+@pytest.mark.parametrize('forbidden', [[0, 1, 2, 3], [-1], [4], [0.5], [True]])
+def test_generation_rejects_invalid_exclusions_before_forward(forbidden):
+    method = isolated_method('audiocraft/models/lm.py', 'LMModel', 'generate')
+    model = SimpleNamespace(training=False, card=4)
+    with pytest.raises(ValueError):
+        method(model, forbidden_token_ids=forbidden)
+
+
+def test_tokenizer_excludes_control_and_non_codec_pieces(tmp_path):
+    alphabet = ''.join(chr(77844 + i) for i in range(4))
+    model_path = tmp_path / 'mixed.model'
+    import io
+    serialized = io.BytesIO()
+    spm.SentencePieceTrainer.train(
+        sentence_iterator=iter([alphabet * 20, 'x' * 20]), model_writer=serialized,
+        vocab_size=24, model_type='bpe', hard_vocab_limit=False, character_coverage=1.0,
+        normalization_rule_name='identity', add_dummy_prefix=False,
+        split_by_unicode_script=False, split_by_whitespace=False,
+        bos_id=1, eos_id=2, pad_id=3, minloglevel=2)
+    model_path.write_bytes(serialized.getvalue())
+    processor = spm.SentencePieceProcessor(model_file=str(model_path))
+    tokenizer = AudioTokenTokenizer(str(model_path), 4, 2, processor.get_piece_size())
+    assert {0, 1, 2, 3, processor.piece_to_id('x')} <= set(tokenizer.forbidden_token_ids)
+    allowed = set(range(tokenizer.cardinality)) - set(tokenizer.forbidden_token_ids)
+    assert allowed
+    for piece_id in allowed:
+        text = processor.decode_ids([piece_id])
+        assert text and set(text) <= set(alphabet)
